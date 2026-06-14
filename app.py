@@ -41,7 +41,7 @@ def send_to_db(player, activity, value, notes):
     if not WEBAPP_URL or "YOUR_GOOGLE" in WEBAPP_URL:
         if 'mock_db' not in st.session_state:
             st.session_state.mock_db = []
-        st.session_state.mock_db.append({"Player": player, "Activity": activity, "Value": value, "Notes": notes})
+        st.session_state.mock_db.append({"player": player, "activity": activity, "value": value, "notes": notes})
         return True
     try:
         payload = {"player": player, "activity": activity, "value": value, "notes": notes}
@@ -90,7 +90,6 @@ else:
         
         if raw_q_df.empty:
             st.info("⚽ Running in Local Academy Mode. Pulling varsity drills below!")
-            # Hardcoded sample bank to prevent any spreadsheet connectivity blocks from freezing the UI
             if subj == "Math":
                 active_q = {
                     "coach": "Striker Sam",
@@ -119,7 +118,6 @@ else:
                     "explanation": "As the soccer ball rolls, the blades of grass rub against it. This surface resistance is called friction, and it acts as the outside force that steals the ball's kinetic energy and slows it to a stop!"
                 }
         else:
-            # Clean up and normalize the live Google Sheet columns dynamically
             q_df = raw_q_df.copy()
             q_df.columns = [str(c).strip().lower() for c in q_df.columns]
             
@@ -152,7 +150,6 @@ else:
                 "correct_answer": raw_active[ans_col], "explanation": raw_active[exp_col]
             }
 
-        # Render Game Screen UI Elements
         st.subheader(f"🧠 Chalk Talk with {active_q['coach']} (First 15 Minutes)")
         st.info(active_q['concept_text'])
         st.markdown("---")
@@ -206,7 +203,7 @@ else:
                 st.success("Engine conditioning blocks posted!")
 
     # ---------------------------------------------------------
-    # MODULE 3: LEADERBOARD SYSTEM (League Standings Table)
+    # MODULE 3: LEADERBOARD SYSTEM (Repaired Engine)
     # ---------------------------------------------------------
     elif menu == "🏆 League Table":
         st.header("🏆 The Academy League Table")
@@ -215,37 +212,44 @@ else:
         if log_df.empty:
             st.info("No stats recorded on the pitch yet. Complete a training drill to break the ice!")
         else:
-            log_df.columns = [c.strip().capitalize() for c in log_df.columns]
-            p_c = "Player" if "Player" in log_df.columns else log_df.columns[1]
-            a_c = "Activity" if "Activity" in log_df.columns else log_df.columns[2]
-            v_c = "Value" if "Value" in log_df.columns else log_df.columns[3]
+            # Clean columns by forcing them to absolute lowercase to eliminate parsing bugs
+            log_df.columns = [str(c).strip().lower() for c in log_df.columns]
             
-            log_df[v_c] = pd.to_numeric(log_df[v_c], errors='coerce').fillna(0)
+            # Position fallback map in case structural column headers vary inside Google Sheets
+            p_col = "player" if "player" in log_df.columns else log_df.columns[1]
+            a_col = "activity" if "activity" in log_df.columns else log_df.columns[2]
+            v_col = "value" if "value" in log_df.columns else log_df.columns[3]
             
             summary = []
             
-            # Group rows by the actual Player Name column safely
-            for player in log_df["Player"].unique():
-                if not player or pd.isna(player) or str(player).strip() in ["None", "nan", "", "Timestamp"]: 
+            # Drop empty rows and scan for unique athlete contract strings
+            unique_players = log_df[p_col].dropna().astype(str).str.strip().unique()
+            
+            for player in unique_players:
+                # Bypass script row indicators and metadata labels
+                if player in ["None", "nan", "", "player", "timestamp"]: 
                     continue
                 
-                # Filter down to just this specific player's row metrics
-                pdf = log_df[log_df["Player"] == player]
+                # Sift out logs matching this exact squad member
+                pdf = log_df[log_df[p_col] == player].copy()
                 
-                # Convert the Value column to clean numbers so Python can do addition
-                values = pd.to_numeric(pdf["Value"], errors='coerce').fillna(0)
+                # Standardize incoming activity names to consistent proper case
+                pdf[a_col] = pdf[a_col].astype(str).str.strip().str.capitalize()
                 
-                # Calculate individual scoring categories
-                study = pdf[pdf["Activity"].isin(["Math", "Reading", "Science"])]["Value"].astype(float).sum()
-                chores = pdf[pdf["Activity"] == "Chore"]["Value"].astype(float).sum()
-                books = pdf[pdf["Activity"] == "Book"]["Value"].astype(float).sum()
-                fitness = pdf[pdf["Activity"] == "Workout"]["Value"].astype(float).sum()
+                # Safely parse numeric column blocks to floats 
+                pdf_values = pd.to_numeric(pdf[v_col], errors='coerce').fillna(0).astype(float)
                 
-                # Gamified Scoring Formula: 1 point per academic/fitness minute, 10 points per chore, 20 points per book read
+                # Segment calculations based on specific log channels
+                study = pdf_values[pdf[a_col].isin(["Math", "Reading", "Science"])].sum()
+                chores = pdf_values[pdf[a_col] == "Chore"].sum()
+                books = pdf_values[pdf[a_col] == "Book"].sum()
+                fitness = pdf_values[pdf[a_col] == "Workout"].sum()
+                
+                # Gamified scoring formula metrics mapping
                 pts = study + fitness + (chores * 10) + (books * 20)
                 
                 summary.append({
-                    "Player Squad Member": str(player).strip(), 
+                    "Player Squad Member 🏃‍♂️": str(player), 
                     "Study Mins 📚": int(study), 
                     "Chores Done 🧹": int(chores), 
                     "Books Read 📖": int(books), 
@@ -253,7 +257,9 @@ else:
                     "Total League Points 🏆": int(pts)
                 })
             
-            # Sort the roster so the highest scorer climbs to the #1 spot
-            res_df = pd.DataFrame(summary).sort_values(by="Total League Points 🏆", ascending=False).reset_index(drop=True)
-            st.dataframe(res_df, use_container_width=True)
-            st.balloons()
+            if summary:
+                res_df = pd.DataFrame(summary).sort_values(by="Total League Points 🏆", ascending=False).reset_index(drop=True)
+                st.dataframe(res_df, use_container_width=True)
+                st.balloons()
+            else:
+                st.info("Training roster calculations processing... Complete a match drill to break the score line!")
