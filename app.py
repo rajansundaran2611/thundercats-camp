@@ -203,63 +203,84 @@ else:
                 st.success("Engine conditioning blocks posted!")
 
     # ---------------------------------------------------------
-    # MODULE 3: LEADERBOARD SYSTEM (Repaired Engine)
+    # MODULE 3: LEADERBOARD SYSTEM (100% Position-Based Fix)
     # ---------------------------------------------------------
     elif menu == "🏆 League Table":
         st.header("🏆 The Academy League Table")
         log_df = load_from_db("get_logs")
         
-        if log_df.empty:
+        if log_df.empty or len(log_df.columns) < 4:
             st.info("No stats recorded on the pitch yet. Complete a training drill to break the ice!")
         else:
-            # Clean columns by forcing them to absolute lowercase to eliminate parsing bugs
-            log_df.columns = [str(c).strip().lower() for c in log_df.columns]
-            
-            # Position fallback map in case structural column headers vary inside Google Sheets
-            p_col = "player" if "player" in log_df.columns else log_df.columns[1]
-            a_col = "activity" if "activity" in log_df.columns else log_df.columns[2]
-            v_col = "value" if "value" in log_df.columns else log_df.columns[3]
+            # 🎯 PURE GEOMETRIC MAP: We bypass string names entirely and use number index positions!
+            # Column 0 = Timestamp | Column 1 = Player | Column 2 = Activity | Column 3 = Value
+            p_idx = 1  
+            a_idx = 2  
+            v_idx = 3  
             
             summary = []
             
-            # Drop empty rows and scan for unique athlete contract strings
-            unique_players = log_df[p_col].dropna().astype(str).str.strip().unique()
+            # Extract unique values from Column 1 (Player Name)
+            unique_players = log_df.iloc[:, p_idx].dropna().astype(str).str.strip().unique()
             
             for player in unique_players:
-                # Bypass script row indicators and metadata labels
-                if player in ["None", "nan", "", "player", "timestamp"]: 
+                # 🛑 CRITICAL FILTER: Instantly filter out headers, metadata, or formatting artifacts
+                if player in ["None", "nan", "", "player", "Player", "timestamp", "Timestamp"]: 
                     continue
                 
-                # Sift out logs matching this exact squad member
-                pdf = log_df[log_df[p_col] == player].copy()
+                # Check if the text value in Column 1 looks like a timestamp/date instead of a name
+                if "-" in player and ":" in player or len(player) > 20 and ("202" in player):
+                    continue
                 
-                # Standardize incoming activity names to consistent proper case
-                pdf[a_col] = pdf[a_col].astype(str).str.strip().str.capitalize()
+                # Isolate rows belonging strictly to this single player
+                pdf = log_df[log_df.iloc[:, p_idx].astype(str).str.strip() == player]
                 
-                # Safely parse numeric column blocks to floats 
-                pdf_values = pd.to_numeric(pdf[v_col], errors='coerce').fillna(0).astype(float)
+                # Setup specific category sums
+                study = 0
+                chores = 0
+                books = 0
+                fitness = 0
                 
-                # Segment calculations based on specific log channels
-                study = pdf_values[pdf[a_col].isin(["Math", "Reading", "Science"])].sum()
-                chores = pdf_values[pdf[a_col] == "Chore"].sum()
-                books = pdf_values[pdf[a_col] == "Book"].sum()
-                fitness = pdf_values[pdf[a_col] == "Workout"].sum()
+                # Process row calculations individually
+                for _, row in pdf.iterrows():
+                    act = str(row.iloc[a_idx]).strip().capitalize()
+                    
+                    # ❌ EXCLUDE REGISTRATION: If activity is Registration, ignore it!
+                    if act == "Registration":
+                        continue
+                        
+                    # Safely extract score metric value
+                    try:
+                        val = float(row.iloc[v_idx])
+                    except:
+                        val = 0.0
+                        
+                    if act in ["Math", "Reading", "Science"]:
+                        study += val
+                    elif act == "Chore":
+                        chores += val
+                    elif act == "Book":
+                        books += val
+                    elif act == "Workout":
+                        fitness += val
                 
-                # Gamified scoring formula metrics mapping
+                # Gamified scoring point formula execution
                 pts = study + fitness + (chores * 10) + (books * 20)
                 
-                summary.append({
-                    "Player Squad Member 🏃‍♂️": str(player), 
-                    "Study Mins 📚": int(study), 
-                    "Chores Done 🧹": int(chores), 
-                    "Books Read 📖": int(books), 
-                    "Fitness Mins 💪": int(fitness), 
-                    "Total League Points 🏆": int(pts)
-                })
+                # Only display players who have actual minutes or points earned
+                if pts > 0 or study > 0 or fitness > 0:
+                    summary.append({
+                        "Player Squad Member 🏃‍♂️": str(player), 
+                        "Study Mins 📚": int(study), 
+                        "Chores Done 🧹": int(chores), 
+                        "Books Read 📖": int(books), 
+                        "Fitness Mins 💪": int(fitness), 
+                        "Total League Points 🏆": int(pts)
+                    })
             
             if summary:
                 res_df = pd.DataFrame(summary).sort_values(by="Total League Points 🏆", ascending=False).reset_index(drop=True)
                 st.dataframe(res_df, use_container_width=True)
                 st.balloons()
             else:
-                st.info("Training roster calculations processing... Complete a match drill to break the score line!")
+                st.info("Training roster calculations processing... Complete a match drill or log a chore to update scores!")
