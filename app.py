@@ -223,21 +223,29 @@ else:
             log_df[v_c] = pd.to_numeric(log_df[v_c], errors='coerce').fillna(0)
             
             summary = []
-            for player in log_df[p_c].unique():
-                if not player or player in ["None", "nan", ""]: 
+            
+            # Group rows by the actual Player Name column safely
+            for player in log_df["Player"].unique():
+                if not player or pd.isna(player) or str(player).strip() in ["None", "nan", "", "Timestamp"]: 
                     continue
-                pdf = log_df[log_df[p_c] == player]
                 
-                study = pdf[pdf[a_c].isin(["Math", "Reading", "Science"])][v_c].sum()
-                chores = pdf[pdf[a_c] == "Chore"][v_c].sum()
-                books = pdf[pdf[a_c] == "Book"][v_c].sum()
-                fitness = pdf[pdf[a_c] == "Workout"][v_c].sum()
+                # Filter down to just this specific player's row metrics
+                pdf = log_df[log_df["Player"] == player]
+                
+                # Convert the Value column to clean numbers so Python can do addition
+                values = pd.to_numeric(pdf["Value"], errors='coerce').fillna(0)
+                
+                # Calculate individual scoring categories
+                study = pdf[pdf["Activity"].isin(["Math", "Reading", "Science"])]["Value"].astype(float).sum()
+                chores = pdf[pdf["Activity"] == "Chore"]["Value"].astype(float).sum()
+                books = pdf[pdf["Activity"] == "Book"]["Value"].astype(float).sum()
+                fitness = pdf[pdf["Activity"] == "Workout"]["Value"].astype(float).sum()
                 
                 # Gamified Scoring Formula: 1 point per academic/fitness minute, 10 points per chore, 20 points per book read
                 pts = study + fitness + (chores * 10) + (books * 20)
                 
                 summary.append({
-                    "Player Squad Member": player, 
+                    "Player Squad Member": str(player).strip(), 
                     "Study Mins 📚": int(study), 
                     "Chores Done 🧹": int(chores), 
                     "Books Read 📖": int(books), 
@@ -245,6 +253,7 @@ else:
                     "Total League Points 🏆": int(pts)
                 })
             
+            # Sort the roster so the highest scorer climbs to the #1 spot
             res_df = pd.DataFrame(summary).sort_values(by="Total League Points 🏆", ascending=False).reset_index(drop=True)
             st.dataframe(res_df, use_container_width=True)
             st.balloons()
