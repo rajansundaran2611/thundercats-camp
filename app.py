@@ -11,6 +11,8 @@ st.set_page_config(page_title="Thornton Thundercats FC", page_icon="⚽", layout
 # 🔌 PASTE YOUR GOOGLE WEB APP URL HERE INSIDE THE QUOTES
 WEBAPP_URL = "https://script.google.com/macros/s/AKfycbxVA3RcQj8IQAShz3N3fc7KlaQkMzKjcOk2JMTZ-DjBchlUtPwDxVqX_BlHjexTDDaJNA/exec"
 
+# Use caching to prevent the app from freezing during database loads!
+@st.cache_data(ttl=60)
 def load_from_db(action="get_logs"):
     if not WEBAPP_URL or "YOUR_GOOGLE" in WEBAPP_URL:
         if action == "get_questions":
@@ -82,58 +84,81 @@ if not st.session_state.user:
         if st.form_submit_button("Sign the Contract") and name:
             st.session_state.user = name
             st.session_state.login_time = time.time()
+            st.session_state.timer_running = True
+            st.session_state.frozen_seconds = 0
             send_to_db(name, "Registration", 0, "Signed with the club roster")
             st.rerun()
 else:
     # --- DIGITAL CLOCK TIMER SYSTEM ---
     if 'login_time' not in st.session_state:
         st.session_state.login_time = time.time()
+    if 'timer_running' not in st.session_state:
+        st.session_state.timer_running = True
+    if 'frozen_seconds' not in st.session_state:
+        st.session_state.frozen_seconds = 0
     
-    elapsed_seconds = int(time.time() - st.session_state.login_time)
+    if st.session_state.timer_running:
+        elapsed_seconds = int(time.time() - st.session_state.login_time)
+    else:
+        elapsed_seconds = st.session_state.frozen_seconds
+    
+    js_is_running = 'true' if st.session_state.timer_running else 'false'
     
     timer_html = f"""
     <script>
     var parentDoc = window.parent.document;
     var existingTimer = parentDoc.getElementById("fbisd-timer");
+    var isRunning = {js_is_running};
+    
+    if (window.fbisdInterval) {{
+        clearInterval(window.fbisdInterval);
+    }}
     
     if (!existingTimer) {{
-        var timerDiv = parentDoc.createElement("div");
-        timerDiv.id = "fbisd-timer";
-        timerDiv.style.position = "fixed";
-        timerDiv.style.top = "60px";
-        timerDiv.style.right = "20px";
-        timerDiv.style.backgroundColor = "#0f4d92";
-        timerDiv.style.color = "#ffffff";
-        timerDiv.style.padding = "10px 20px";
-        timerDiv.style.fontSize = "24px";
-        timerDiv.style.fontFamily = "'Courier New', Courier, monospace";
-        timerDiv.style.fontWeight = "bold";
-        timerDiv.style.borderRadius = "8px";
-        timerDiv.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
-        timerDiv.style.zIndex = "999999";
-        timerDiv.innerHTML = "00:00";
-        parentDoc.body.appendChild(timerDiv);
-        
-        let totalSeconds = {elapsed_seconds};
-        
-        setInterval(function() {{
-            totalSeconds++;
-            let hours = Math.floor(totalSeconds / 3600);
-            let minutes = Math.floor((totalSeconds - (hours * 3600)) / 60);
-            let seconds = totalSeconds - (hours * 3600) - (minutes * 60);
+        existingTimer = parentDoc.createElement("div");
+        existingTimer.id = "fbisd-timer";
+        existingTimer.style.position = "fixed";
+        existingTimer.style.top = "60px";
+        existingTimer.style.right = "20px";
+        existingTimer.style.backgroundColor = "#0f4d92";
+        existingTimer.style.color = "#ffffff";
+        existingTimer.style.padding = "10px 20px";
+        existingTimer.style.fontSize = "24px";
+        existingTimer.style.fontFamily = "'Courier New', Courier, monospace";
+        existingTimer.style.fontWeight = "bold";
+        existingTimer.style.borderRadius = "8px";
+        existingTimer.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
+        existingTimer.style.zIndex = "999999";
+        parentDoc.body.appendChild(existingTimer);
+    }}
+    
+    let totalSeconds = {elapsed_seconds};
+    
+    function updateDisplay(seconds) {{
+        let hours = Math.floor(seconds / 3600);
+        let minutes = Math.floor((seconds - (hours * 3600)) / 60);
+        let secs = seconds % 60;
+        let formattedMinutes = minutes < 10 ? "0" + minutes : minutes;
+        let formattedSeconds = secs < 10 ? "0" + secs : secs;
+        let display = formattedMinutes + ":" + formattedSeconds;
+        if (hours > 0) {{
+            let formattedHours = hours < 10 ? "0" + hours : hours;
+            display = formattedHours + ":" + display;
+        }}
+        existingTimer.innerHTML = display;
+    }}
 
-            let formattedMinutes = minutes < 10 ? "0" + minutes : minutes;
-            let formattedSeconds = seconds < 10 ? "0" + seconds : seconds;
-            
-            let display = formattedMinutes + ":" + formattedSeconds;
-            
-            if (hours > 0) {{
-                let formattedHours = hours < 10 ? "0" + hours : hours;
-                display = formattedHours + ":" + display;
-            }}
-            
-            parentDoc.getElementById("fbisd-timer").innerHTML = display;
+    updateDisplay(totalSeconds);
+    
+    if (isRunning) {{
+        existingTimer.style.backgroundColor = "#0f4d92"; 
+        window.fbisdInterval = setInterval(function() {{
+            totalSeconds++;
+            updateDisplay(totalSeconds);
         }}, 1000);
+    }} else {{
+        existingTimer.style.backgroundColor = "#28a745"; 
+        existingTimer.innerHTML = "🏁 " + existingTimer.innerHTML;
     }}
     </script>
     """
@@ -157,7 +182,7 @@ else:
     )
 
     # ---------------------------------------------------------
-    # MODULE 1: DYNAMIC DRILLS (WITH NEW NAVIGATION SYSTEM)
+    # MODULE 1: DYNAMIC DRILLS 
     # ---------------------------------------------------------
     if menu == "📋 Daily Drills":
         st.header("Today's Tactical Training (45 Minutes)")
@@ -206,7 +231,6 @@ else:
             
             opts = [str(raw_active[ca_col]), str(raw_active[cb_col]), str(raw_active[cc_col]), str(raw_active[cd_col])]
             
-            # Unique key so the radio button resets when moving to the next question
             ans = st.radio("Pick your shot placement:", ["Select..."] + opts, key=f"ans_{subj}_{st.session_state.q_index}")
             
             if ans != "Select...":
@@ -230,16 +254,23 @@ else:
                     st.session_state.q_index += 1
                     st.rerun()
             with c3:
-                if st.button("🏠 End Section", use_container_width=True):
-                    st.session_state.active_tab = "🏆 League Table"
+                if st.button("🏠 Home", use_container_width=True):
+                    st.session_state.active_tab = "📋 Daily Drills"
+                    st.session_state.current_subj = None
                     st.rerun()
             with c4:
-                if st.button("✅ End Lesson for Day", use_container_width=True):
-                    # Calculate minutes from login time, defaulting to at least 1 minute
-                    elapsed_mins = max(1, int((time.time() - st.session_state.login_time) / 60))
-                    send_to_db(st.session_state.user, subj, elapsed_mins, f"Completed Daily Lesson Module")
-                    st.success(f"Great Hustle! {elapsed_mins} minutes successfully logged to the database!")
-                    time.sleep(2) # Give the student 2 seconds to read the success message
+                if st.button("✅ End Lesson", use_container_width=True):
+                    st.session_state.timer_running = False
+                    st.session_state.frozen_seconds = int(time.time() - st.session_state.login_time)
+                    
+                    elapsed_mins = max(1, int(st.session_state.frozen_seconds / 60))
+                    send_to_db(st.session_state.user, subj, elapsed_mins, "Completed Daily Lesson Module")
+                    
+                    st.balloons()
+                    st.success(f"🎉 **GOALLL! Incredible effort, {st.session_state.user}!**")
+                    st.info(f"🏆 You just banked **{elapsed_mins} minutes** of pure brain-training. A true Thundercat never quits. Take a breather, hydrate, and we'll see you at the next session!")
+                    
+                    time.sleep(4)
                     st.session_state.active_tab = "🏆 League Table"
                     st.rerun()
 
@@ -256,6 +287,7 @@ else:
             chore_txt = st.text_input("What chore did you complete? (e.g., Vacuumed):")
             if st.button("Log Chore Points") and chore_txt:
                 send_to_db(st.session_state.user, "Chore", 1, chore_txt)
+                load_from_db.clear()
                 st.success("Top team player! Milestone added!")
                 
         with c2:
@@ -263,6 +295,7 @@ else:
             book_txt = st.text_input("What book did you devour? (Builds reading muscle!):")
             if st.button("Log Reading Progress") and book_txt:
                 send_to_db(st.session_state.user, "Book", 1, book_txt)
+                load_from_db.clear()
                 st.success("Expanding your playbook! Tracked successfully.")
                 
         with c3:
@@ -270,6 +303,7 @@ else:
             workout_mins = st.number_input("Minutes spent training today:", min_value=0, max_value=300, step=5)
             if st.button("Log Training Minutes") and workout_mins > 0:
                 send_to_db(st.session_state.user, "Workout", workout_mins, "Athletic conditioning block")
+                load_from_db.clear()
                 st.success("Engine conditioning blocks posted!")
 
     # ---------------------------------------------------------
