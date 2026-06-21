@@ -44,4 +44,27 @@ def load_from_db(action="get_logs"):
         url = f"{WEBAPP_URL}?action={action}"
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req) as response:
-            raw_data =
+            raw_data = json.loads(response.read().decode('utf-8'))
+        return pd.DataFrame(raw_data)
+    except Exception as e:
+        return pd.DataFrame()
+
+def send_to_db(player, activity, value, notes):
+    if not WEBAPP_URL or "YOUR_GOOGLE" in WEBAPP_URL:
+        if 'mock_db' not in st.session_state:
+            st.session_state.mock_db = []
+        st.session_state.mock_db.append({"player": player, "activity": activity, "value": value, "notes": notes})
+        return True
+    try:
+        payload = {"player": player, "activity": activity, "value": value, "notes": notes}
+        req = urllib.request.Request(
+            WEBAPP_URL, 
+            data=json.dumps(payload).encode('utf-8'), 
+            headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'}
+        )
+        with urllib.request.urlopen(req) as response:
+            return True
+    except:
+        return False
+
+if 'user' not in st.session_state:
