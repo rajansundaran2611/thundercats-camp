@@ -262,4 +262,195 @@ else:
     except ValueError:
         tab_index = 0
 
-    menu =
+    menu = st.sidebar.radio("Tactics Board", tabs, index=tab_index)
+    st.session_state.active_tab = menu
+
+    # ---------------------------------------------------------
+    # MODULE 1: DYNAMIC DRILLS 
+    # ---------------------------------------------------------
+    if menu == "📋 Daily Drills":
+        st.header("Today's Tactical Training (45 Minutes)")
+        subj = st.selectbox("Select your training session:", ["Math", "Reading", "Science"])
+        
+        if 'current_subj' not in st.session_state or st.session_state.current_subj != subj:
+            st.session_state.current_subj = subj
+            st.session_state.q_index = 0
+            
+        q_df = raw_q_df.copy()
+        if not q_df.empty:
+            q_df.columns = [str(c).strip().lower() for c in q_df.columns]
+            s_col = "subject" if "subject" in q_df.columns else q_df.columns[0]
+            q_df[s_col] = q_df[s_col].astype(str).str.strip().str.capitalize()
+            pool = q_df[q_df[s_col] == subj.capitalize()]
+        else:
+            pool = pd.DataFrame()
+
+        if pool.empty:
+            st.warning(f"Coaching staff is uploading {subj} drills right now! Check back later.")
+        else:
+            total_qs = len(pool)
+            
+            c_col = "coach" if "coach" in pool.columns else pool.columns[1]
+            txt_col = "concept_text" if "concept_text" in pool.columns else pool.columns[2]
+            q_col = "question" if "question" in pool.columns else pool.columns[3]
+            ca_col = "choice_a" if "choice_a" in pool.columns else pool.columns[4]
+            cb_col = "choice_b" if "choice_b" in pool.columns else pool.columns[5]
+            cc_col = "choice_c" if "choice_c" in pool.columns else pool.columns[6]
+            cd_col = "choice_d" if "choice_d" in pool.columns else pool.columns[7]
+            ans_col = "correct_answer" if "correct_answer" in pool.columns else pool.columns[8]
+            exp_col = "explanation" if "explanation" in pool.columns else pool.columns[9]
+
+            raw_active = pool.iloc[st.session_state.q_index].to_dict()
+            
+            st.markdown(f"**Drill {st.session_state.q_index + 1} of {total_qs}**")
+            
+            st.subheader(f"🧠 Chalk Talk with {raw_active[c_col]} (First 15 Minutes)")
+            st.info(raw_active[txt_col])
+            st.markdown("---")
+            
+            st.subheader("🎯 Match Time: The Quiz")
+            st.write(raw_active[q_col])
+            
+            opts = [str(raw_active[ca_col]), str(raw_active[cb_col]), str(raw_active[cc_col]), str(raw_active[cd_col])]
+            ans = st.radio("Pick your shot placement:", ["Select..."] + opts, key=f"ans_{subj}_{st.session_state.q_index}")
+            
+            if ans != "Select...":
+                if ans == str(raw_active[ans_col]):
+                    st.success("⚽ GOALLLL!!! Top-bins finish! You read the play perfectly.")
+                else:
+                    st.error("❌ SAVED BY THE KEEPER! Hit the woodwork.")
+                    st.warning(f"📋 **Coach's Video Review Breakdown:** {raw_active[exp_col]}")
+            
+            st.markdown("---")
+            
+            c1, c2, c3, c4 = st.columns(4)
+            
+            with c1:
+                if st.button("⬅️ Previous", disabled=(st.session_state.q_index == 0), use_container_width=True):
+                    st.session_state.q_index -= 1
+                    st.rerun()
+            with c2:
+                if st.button("Next ➡️", disabled=(st.session_state.q_index >= total_qs - 1), use_container_width=True):
+                    st.session_state.q_index += 1
+                    st.rerun()
+            with c3:
+                if st.button("🏠 Home", use_container_width=True):
+                    st.session_state.active_tab = "📋 Daily Drills"
+                    st.session_state.current_subj = None
+                    st.rerun()
+            with c4:
+                if st.button("✅ End Lesson", use_container_width=True):
+                    st.session_state.timer_running = False
+                    st.session_state.frozen_seconds = int(time.time() - st.session_state.login_time)
+                    
+                    elapsed_mins = max(1, int(st.session_state.frozen_seconds / 60))
+                    send_to_db(st.session_state.user, subj, elapsed_mins, "Completed Daily Lesson Module")
+                    load_from_db.clear()
+                    
+                    st.balloons()
+                    st.success(f"🎉 **GOALLL! Incredible effort, {st.session_state.user}!**")
+                    st.info(f"🏆 You just banked **{elapsed_mins} minutes** of pure brain-training. A true Thundercat never quits. Take a breather, hydrate, and we'll see you at the next session!")
+                    
+                    time.sleep(4)
+                    st.session_state.active_tab = "🏆 League Table"
+                    st.rerun()
+
+    # ---------------------------------------------------------
+    # MODULE 2: HUSTLE LOG
+    # ---------------------------------------------------------
+    elif menu == "📝 The Hustle Log":
+        st.header("📋 The Off-Field Hustle Log")
+        st.write("True professionals put in work even when the stadium cameras are turned off. Log your stats below!")
+        
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.subheader("🧹 Cleaning the Pitch")
+            chore_txt = st.text_input("What chore did you complete? (e.g., Vacuumed):")
+            if st.button("Log Chore Points") and chore_txt:
+                send_to_db(st.session_state.user, "Chore", 1, chore_txt)
+                load_from_db.clear()
+                st.success("Top team player! Milestone added!")
+                
+        with c2:
+            st.subheader("📚 Scouting Reports")
+            book_txt = st.text_input("What book did you devour? (Builds reading muscle!):")
+            if st.button("Log Reading Progress") and book_txt:
+                send_to_db(st.session_state.user, "Book", 1, book_txt)
+                load_from_db.clear()
+                st.success("Expanding your playbook! Tracked successfully.")
+                
+        with c3:
+            st.subheader("💪 Fitness & Conditioning")
+            workout_mins = st.number_input("Minutes spent training today:", min_value=0, max_value=300, step=5)
+            if st.button("Log Training Minutes") and workout_mins > 0:
+                send_to_db(st.session_state.user, "Workout", workout_mins, "Athletic conditioning block")
+                load_from_db.clear()
+                st.success("Engine conditioning blocks posted!")
+
+    # ---------------------------------------------------------
+    # MODULE 3: LEADERBOARD SYSTEM
+    # ---------------------------------------------------------
+    elif menu == "🏆 League Table":
+        st.header("🏆 The Academy League Table")
+        log_df = load_from_db("get_logs")
+        
+        if log_df.empty or len(log_df.columns) < 4:
+            st.info("No stats recorded on the pitch yet. Complete a training drill to break the ice!")
+        else:
+            p_idx = 1  
+            a_idx = 2  
+            v_idx = 3  
+            
+            summary = []
+            unique_players = log_df.iloc[:, p_idx].dropna().astype(str).str.strip().unique()
+            
+            for player in unique_players:
+                if player in ["None", "nan", "", "player", "Player", "timestamp", "Timestamp"]: 
+                    continue
+                if "-" in player and ":" in player or len(player) > 20 and ("202" in player):
+                    continue
+                
+                pdf = log_df[log_df.iloc[:, p_idx].astype(str).str.strip() == player]
+                
+                study = 0
+                chores = 0
+                books = 0
+                fitness = 0
+                
+                for _, row in pdf.iterrows():
+                    act = str(row.iloc[a_idx]).strip().capitalize()
+                    if act in ["Registration", "Account_creation"]:
+                        continue
+                        
+                    try:
+                        val = float(row.iloc[v_idx])
+                    except:
+                        val = 0.0
+                        
+                    if act in ["Math", "Reading", "Science"]:
+                        study += val
+                    elif act == "Chore":
+                        chores += val
+                    elif act == "Book":
+                        books += val
+                    elif act == "Workout":
+                        fitness += val
+                
+                pts = study + fitness + (chores * 10) + (books * 20)
+                
+                if pts > 0 or study > 0 or fitness > 0:
+                    summary.append({
+                        "Player Squad Member 🏃‍♂️": str(player), 
+                        "Study Mins 📚": int(study), 
+                        "Chores Done 🧹": int(chores), 
+                        "Books Read 📖": int(books), 
+                        "Fitness Mins 💪": int(fitness), 
+                        "Total League Points 🏆": int(pts)
+                    })
+            
+            if summary:
+                res_df = pd.DataFrame(summary).sort_values(by="Total League Points 🏆", ascending=False).reset_index(drop=True)
+                st.dataframe(res_df, use_container_width=True)
+                st.balloons()
+            else:
+                st.info("Training roster calculations processing... Complete a match drill or log a chore to update scores!")
