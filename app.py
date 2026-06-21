@@ -3,6 +3,7 @@ import pandas as pd
 import urllib.request
 import json
 import time
+import hashlib
 import streamlit.components.v1 as components
 
 # App Setup & Theme Branding
@@ -10,6 +11,15 @@ st.set_page_config(page_title="Thornton Thundercats FC", page_icon="⚽", layout
 
 # 🔌 PASTE YOUR GOOGLE WEB APP URL HERE INSIDE THE QUOTES
 WEBAPP_URL = "https://script.google.com/macros/s/AKfycbxVA3RcQj8IQAShz3N3fc7KlaQkMzKjcOk2JMTZ-DjBchlUtPwDxVqX_BlHjexTDDaJNA/exec"
+
+# Security Functions for Password Hashing
+def make_hashes(password):
+    return hashlib.sha256(str.encode(password)).hexdigest()
+
+def check_hashes(password, hashed_text):
+    if make_hashes(password) == hashed_text:
+        return True
+    return False
 
 # Use caching to prevent the app from freezing during database loads!
 @st.cache_data(ttl=60)
@@ -76,18 +86,88 @@ st.write("Welcome to the Academy! Train your brain with our All-Pro coaches, log
 
 raw_q_df = load_from_db("get_questions")
 
-# --- LOGIN SCREEN SYSTEM ---
+# --- LOGIN & REGISTRATION SYSTEM ---
 if not st.session_state.user:
     st.subheader("🔐 Locker Room Check-In")
-    with st.form("login"):
-        name = st.text_input("Enter your Locker Room Name (e.g., ClinicalCole):").strip()
-        if st.form_submit_button("Sign the Contract") and name:
-            st.session_state.user = name
-            st.session_state.login_time = time.time()
-            st.session_state.timer_running = True
-            st.session_state.frozen_seconds = 0
-            send_to_db(name, "Registration", 0, "Signed with the club roster")
-            st.rerun()
+    
+    tab1, tab2 = st.tabs(["📋 Log In (Returning Players)", "📝 Sign Up (New Players)"])
+    
+    # 1. LOG IN TAB
+    with tab1:
+        with st.form("login_form"):
+            st.write("Welcome back! Enter your credentials to hit the pitch.")
+            log_email = st.text_input("Email Address").strip().lower()
+            log_pass = st.text_input("Password", type="password")
+            submit_login = st.form_submit_button("Log In")
+            
+            if submit_login and log_email and log_pass:
+                df = load_from_db("get_logs")
+                
+                if df.empty or len(df.columns) < 4:
+                    st.error("Database connection error or no users registered yet.")
+                else:
+                    # Filter for account creation logs
+                    auth_records = df[df.iloc[:, 2].astype(str).str.strip() == "Account_Creation"]
+                    
+                    login_success = False
+                    for _, row in auth_records.iterrows():
+                        notes_field = str(row.iloc[3])
+                        p_name = str(row.iloc[1])
+                        
+                        if "::" in notes_field:
+                            stored_email, stored_hash = notes_field.split("::", 1)
+                            if stored_email == log_email and check_hashes(log_pass, stored_hash):
+                                st.session_state.user = p_name
+                                st.session_state.login_time = time.time()
+                                st.session_state.timer_running = True
+                                st.session_state.frozen_seconds = 0
+                                st.rerun()
+                                login_success = True
+                                break
+                    
+                    if not login_success:
+                        st.error("❌ Incorrect email or password. Check your spelling or sign a new contract!")
+
+    # 2. SIGN UP TAB
+    with tab2:
+        with st.form("signup_form"):
+            st.write("First time here? Sign your rookie contract below!")
+            new_email = st.text_input("Email Address").strip().lower()
+            new_name = st.text_input("Player Name (Shows on Leaderboard)").strip()
+            new_pass = st.text_input("Create a Password", type="password")
+            submit_signup = st.form_submit_button("Sign the Contract")
+            
+            if submit_signup:
+                if not new_email or not new_name or len(new_pass) < 4:
+                    st.warning("Please fill out all fields. Passwords must be at least 4 characters!")
+                else:
+                    df = load_from_db("get_logs")
+                    email_exists = False
+                    name_exists = False
+                    
+                    if not df.empty and len(df.columns) >= 4:
+                        auth_records = df[df.iloc[:, 2].astype(str).str.strip() == "Account_Creation"]
+                        for _, row in auth_records.iterrows():
+                            notes_field = str(row.iloc[3])
+                            p_name = str(row.iloc[1])
+                            if "::" in notes_field:
+                                stored_email, _ = notes_field.split("::", 1)
+                                if stored_email == new_email:
+                                    email_exists = True
+                                if p_name.lower() == new_name.lower():
+                                    name_exists = True
+                                    
+                    if email_exists:
+                        st.error("⚠️ An account with this email already exists. Head over to the Log In tab!")
+                    elif name_exists:
+                        st.error("⚠️ This Player Name is already taken. Pick a unique nickname for the squad!")
+                    else:
+                        hashed_p = make_hashes(new_pass)
+                        # We securely store the email and hashed password inside the 'notes' column
+                        send_to_db(new_name, "Account_Creation", 0, f"{new_email}::{hashed_p}")
+                        st.success(f"✅ Contract signed! Welcome to the squad, {new_name}. You can now use the 'Log In' tab to enter the facility.")
+                        load_from_db.clear() # Clear cache so they can immediately log in
+
 else:
     # --- DIGITAL CLOCK TIMER SYSTEM ---
     if 'login_time' not in st.session_state:
@@ -165,7 +245,7 @@ else:
     components.html(timer_html, width=0, height=0)
 
     st.sidebar.markdown(f"### 🏃‍♂️ Squad Member: **{st.session_state.user}**")
-    if st.sidebar.button("Leave Training"):
+    if st.sidebar.button("Leave Training / Log Out"):
         st.session_state.user = None
         if 'login_time' in st.session_state:
             del st.session_state.login_time
@@ -177,20 +257,12 @@ else:
     if 'active_tab' not in st.session_state:
         st.session_state.active_tab = tabs[0]
 
-    # Find the index of the current tab
     try:
         tab_index = tabs.index(st.session_state.active_tab)
     except ValueError:
         tab_index = 0
 
-    # Render the menu WITHOUT the rigid 'key' lock, using the index instead
-    menu = st.sidebar.radio(
-        "Tactics Board", 
-        tabs,
-        index=tab_index
-    )
-
-    # Sync the user's manual clicks back to the session state
+    menu = st.sidebar.radio("Tactics Board", tabs, index=tab_index)
     st.session_state.active_tab = menu
 
     # ---------------------------------------------------------
@@ -200,7 +272,6 @@ else:
         st.header("Today's Tactical Training (45 Minutes)")
         subj = st.selectbox("Select your training session:", ["Math", "Reading", "Science"])
         
-        # State Tracking for Question Index
         if 'current_subj' not in st.session_state or st.session_state.current_subj != subj:
             st.session_state.current_subj = subj
             st.session_state.q_index = 0
@@ -219,7 +290,6 @@ else:
         else:
             total_qs = len(pool)
             
-            # Map columns dynamically
             c_col = "coach" if "coach" in pool.columns else pool.columns[1]
             txt_col = "concept_text" if "concept_text" in pool.columns else pool.columns[2]
             q_col = "question" if "question" in pool.columns else pool.columns[3]
@@ -242,7 +312,6 @@ else:
             st.write(raw_active[q_col])
             
             opts = [str(raw_active[ca_col]), str(raw_active[cb_col]), str(raw_active[cc_col]), str(raw_active[cd_col])]
-            
             ans = st.radio("Pick your shot placement:", ["Select..."] + opts, key=f"ans_{subj}_{st.session_state.q_index}")
             
             if ans != "Select...":
@@ -254,7 +323,6 @@ else:
             
             st.markdown("---")
             
-            # --- NAVIGATION BUTTON ROW ---
             c1, c2, c3, c4 = st.columns(4)
             
             with c1:
@@ -277,8 +345,6 @@ else:
                     
                     elapsed_mins = max(1, int(st.session_state.frozen_seconds / 60))
                     send_to_db(st.session_state.user, subj, elapsed_mins, "Completed Daily Lesson Module")
-                    
-                    # NEW PLAY: Clear the cache so the League Table updates instantly!
                     load_from_db.clear()
                     
                     st.balloons()
@@ -353,8 +419,9 @@ else:
                 
                 for _, row in pdf.iterrows():
                     act = str(row.iloc[a_idx]).strip().capitalize()
-                    if act == "Registration":
+                    if act in ["Registration", "Account_creation"]:
                         continue
+                        
                     try:
                         val = float(row.iloc[v_idx])
                     except:
@@ -374,16 +441,4 @@ else:
                 if pts > 0 or study > 0 or fitness > 0:
                     summary.append({
                         "Player Squad Member 🏃‍♂️": str(player), 
-                        "Study Mins 📚": int(study), 
-                        "Chores Done 🧹": int(chores), 
-                        "Books Read 📖": int(books), 
-                        "Fitness Mins 💪": int(fitness), 
-                        "Total League Points 🏆": int(pts)
-                    })
-            
-            if summary:
-                res_df = pd.DataFrame(summary).sort_values(by="Total League Points 🏆", ascending=False).reset_index(drop=True)
-                st.dataframe(res_df, use_container_width=True)
-                st.balloons()
-            else:
-                st.info("Training roster calculations processing... Complete a match drill or log a chore to update scores!")
+                        "
