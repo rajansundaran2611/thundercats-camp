@@ -182,3 +182,152 @@ if not st.session_state.user:
                         load_from_db.clear() # Clear cache so they can immediately log in
 
 else:
+    # --- DIGITAL CLOCK TIMER SYSTEM ---
+    if 'login_time' not in st.session_state:
+        st.session_state.login_time = time.time()
+    if 'timer_running' not in st.session_state:
+        st.session_state.timer_running = True
+    if 'frozen_seconds' not in st.session_state:
+        st.session_state.frozen_seconds = 0
+    
+    if st.session_state.timer_running:
+        elapsed_seconds = int(time.time() - st.session_state.login_time)
+    else:
+        elapsed_seconds = st.session_state.frozen_seconds
+    
+    js_is_running = 'true' if st.session_state.timer_running else 'false'
+    
+    timer_html = f"""
+    <script>
+    var parentDoc = window.parent.document;
+    var existingTimer = parentDoc.getElementById("fbisd-timer");
+    var isRunning = {js_is_running};
+    
+    if (window.fbisdInterval) {{
+        clearInterval(window.fbisdInterval);
+    }}
+    
+    if (!existingTimer) {{
+        existingTimer = parentDoc.createElement("div");
+        existingTimer.id = "fbisd-timer";
+        existingTimer.style.position = "fixed";
+        existingTimer.style.top = "60px";
+        existingTimer.style.right = "20px";
+        existingTimer.style.backgroundColor = "#0f4d92";
+        existingTimer.style.color = "#ffffff";
+        existingTimer.style.padding = "10px 20px";
+        existingTimer.style.fontSize = "24px";
+        existingTimer.style.fontFamily = "'Courier New', Courier, monospace";
+        existingTimer.style.fontWeight = "bold";
+        existingTimer.style.borderRadius = "8px";
+        existingTimer.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
+        existingTimer.style.zIndex = "999999";
+        parentDoc.body.appendChild(existingTimer);
+    }}
+    
+    let totalSeconds = {elapsed_seconds};
+    
+    function updateDisplay(seconds) {{
+        let hours = Math.floor(seconds / 3600);
+        let minutes = Math.floor((seconds - (hours * 3600)) / 60);
+        let secs = seconds % 60;
+        let formattedMinutes = minutes < 10 ? "0" + minutes : minutes;
+        let formattedSeconds = secs < 10 ? "0" + secs : secs;
+        let display = formattedMinutes + ":" + formattedSeconds;
+        if (hours > 0) {{
+            let formattedHours = hours < 10 ? "0" + hours : hours;
+            display = formattedHours + ":" + display;
+        }}
+        existingTimer.innerHTML = display;
+    }}
+
+    updateDisplay(totalSeconds);
+    
+    if (isRunning) {{
+        existingTimer.style.backgroundColor = "#0f4d92"; 
+        window.fbisdInterval = setInterval(function() {{
+            totalSeconds++;
+            updateDisplay(totalSeconds);
+        }}, 1000);
+    }} else {{
+        existingTimer.style.backgroundColor = "#28a745"; 
+        existingTimer.innerHTML = "🏁 " + existingTimer.innerHTML;
+    }}
+    </script>
+    """
+    components.html(timer_html, width=0, height=0)
+
+    st.sidebar.markdown(f"### 🏃‍♂️ Squad Member: **{st.session_state.user}**")
+    if st.sidebar.button("Leave Training / Log Out"):
+        st.session_state.user = None
+        if 'login_time' in st.session_state:
+            del st.session_state.login_time
+        st.rerun()
+
+    # --- DYNAMIC NAVIGATION MENU ---
+    tabs = ["📋 Daily Drills", "📝 The Hustle Log", "🏆 League Table"]
+    
+    if 'active_tab' not in st.session_state:
+        st.session_state.active_tab = tabs[0]
+
+    try:
+        tab_index = tabs.index(st.session_state.active_tab)
+    except ValueError:
+        tab_index = 0
+
+    menu = st.sidebar.radio("Tactics Board", tabs, index=tab_index)
+    st.session_state.active_tab = menu
+
+    # ---------------------------------------------------------
+    # MODULE 1: DYNAMIC DRILLS 
+    # ---------------------------------------------------------
+    if menu == "📋 Daily Drills":
+        st.header("Today's Tactical Training (45 Minutes)")
+        subj = st.selectbox("Select your training session:", ["Math", "Reading", "Science"])
+        
+        if 'current_subj' not in st.session_state or st.session_state.current_subj != subj:
+            st.session_state.current_subj = subj
+            st.session_state.q_index = 0
+            
+        q_df = raw_q_df.copy()
+        if not q_df.empty:
+            q_df.columns = [str(c).strip().lower() for c in q_df.columns]
+            s_col = "subject" if "subject" in q_df.columns else q_df.columns[0]
+            q_df[s_col] = q_df[s_col].astype(str).str.strip().str.capitalize()
+            pool = q_df[q_df[s_col] == subj.capitalize()]
+        else:
+            pool = pd.DataFrame()
+
+        if pool.empty:
+            st.warning(f"Coaching staff is uploading {subj} drills right now! Check back later.")
+        else:
+            total_qs = len(pool)
+            
+            c_col = "coach" if "coach" in pool.columns else pool.columns[1]
+            txt_col = "concept_text" if "concept_text" in pool.columns else pool.columns[2]
+            q_col = "question" if "question" in pool.columns else pool.columns[3]
+            ca_col = "choice_a" if "choice_a" in pool.columns else pool.columns[4]
+            cb_col = "choice_b" if "choice_b" in pool.columns else pool.columns[5]
+            cc_col = "choice_c" if "choice_c" in pool.columns else pool.columns[6]
+            cd_col = "choice_d" if "choice_d" in pool.columns else pool.columns[7]
+            ans_col = "correct_answer" if "correct_answer" in pool.columns else pool.columns[8]
+            exp_col = "explanation" if "explanation" in pool.columns else pool.columns[9]
+
+            raw_active = pool.iloc[st.session_state.q_index].to_dict()
+            
+            st.markdown(f"**Drill {st.session_state.q_index + 1} of {total_qs}**")
+            
+            st.subheader(f"🧠 Chalk Talk with {raw_active[c_col]} (First 15 Minutes)")
+            st.info(raw_active[txt_col])
+            st.markdown("---")
+            
+            st.subheader("🎯 Match Time: The Quiz")
+            st.write(raw_active[q_col])
+            
+            opts = [str(raw_active[ca_col]), str(raw_active[cb_col]), str(raw_active[cc_col]), str(raw_active[cd_col])]
+            ans = st.radio("Pick your shot placement:", ["Select..."] + opts, key=f"ans_{subj}_{st.session_state.q_index}")
+            
+            if ans != "Select...":
+                if ans == str(raw_active[ans_col]):
+                    st.success("⚽ GOALLLL!!! Top-bins finish! You read the play perfectly.")
+                else:
