@@ -331,3 +331,61 @@ else:
                 if ans == str(raw_active[ans_col]):
                     st.success("⚽ GOALLLL!!! Top-bins finish! You read the play perfectly.")
                 else:
+                    st.error("❌ SAVED BY THE KEEPER! Hit the woodwork.")
+                    st.warning(f"📋 **Coach's Video Review Breakdown:** {raw_active[exp_col]}")
+            
+            st.markdown("---")
+            
+            c1, c2, c3, c4 = st.columns(4)
+            
+            with c1:
+                if st.button("⬅️ Previous", disabled=(st.session_state.q_index == 0), use_container_width=True):
+                    st.session_state.q_index -= 1
+                    st.rerun()
+            with c2:
+                if st.button("Next ➡️", disabled=(st.session_state.q_index >= total_qs - 1), use_container_width=True):
+                    st.session_state.q_index += 1
+                    st.rerun()
+            with c3:
+                if st.button("🏠 Home", use_container_width=True):
+                    st.session_state.active_tab = "📋 Daily Drills"
+                    st.session_state.current_subj = None
+                    st.rerun()
+            with c4:
+                if st.button("✅ End Lesson", use_container_width=True):
+                    st.session_state.timer_running = False
+                    st.session_state.frozen_seconds = int(time.time() - st.session_state.login_time)
+                    
+                    elapsed_mins = max(1, int(st.session_state.frozen_seconds / 60))
+                    send_to_db(st.session_state.user, subj, elapsed_mins, "Completed Daily Lesson Module")
+                    load_from_db.clear()
+                    
+                    st.balloons()
+                    st.success(f"🎉 **GOALLL! Incredible effort, {st.session_state.user}!**")
+                    st.info(f"🏆 You just banked **{elapsed_mins} minutes** of pure brain-training. A true Thundercat never quits. Take a breather, hydrate, and we'll see you at the next session!")
+                    
+                    time.sleep(4)
+                    st.session_state.active_tab = "🏆 League Table"
+                    st.rerun()
+
+    # ---------------------------------------------------------
+    # MODULE 2: HUSTLE LOG
+    # ---------------------------------------------------------
+    elif menu == "📝 The Hustle Log":
+        st.header("📋 The Off-Field Hustle Log")
+        st.write("True professionals put in work even when the stadium cameras are turned off. Log your stats below!")
+        
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.subheader("🧹 Cleaning the Pitch")
+            chore_txt = st.text_input("What chore did you complete? (e.g., Vacuumed):")
+            if st.button("Log Chore Points") and chore_txt:
+                send_to_db(st.session_state.user, "Chore", 1, chore_txt)
+                load_from_db.clear()
+                st.success("Top team player! Milestone added!")
+                
+        with c2:
+            st.subheader("📚 Scouting Reports")
+            book_txt = st.text_input("What book did you devour? (Builds reading muscle!):")
+            if st.button("Log Reading Progress") and book_txt:
+                send_to_db
