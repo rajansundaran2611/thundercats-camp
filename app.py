@@ -106,13 +106,19 @@ if not st.session_state.user:
                 if df.empty or len(df.columns) < 4:
                     st.error("Database connection error or no users registered yet.")
                 else:
-                    # Filter for account creation logs
-                    auth_records = df[df.iloc[:, 2].astype(str).str.strip() == "Account_Creation"]
+                    # Filter for account creation logs (bulletproof string matching)
+                    auth_records = df[df.iloc[:, 2].astype(str).str.strip().str.lower() == "account_creation"]
                     
                     login_success = False
                     for _, row in auth_records.iterrows():
-                        notes_field = str(row.iloc[3])
-                        p_name = str(row.iloc[1])
+                        # Bulletproof search: scan the entire row for our security marker
+                        notes_field = ""
+                        for item in row.values:
+                            if isinstance(item, str) and "::" in item:
+                                notes_field = item
+                                break
+                                
+                        p_name = str(row.iloc[1]) # Player name is always index 1
                         
                         if "::" in notes_field:
                             stored_email, stored_hash = notes_field.split("::", 1)
@@ -146,10 +152,17 @@ if not st.session_state.user:
                     name_exists = False
                     
                     if not df.empty and len(df.columns) >= 4:
-                        auth_records = df[df.iloc[:, 2].astype(str).str.strip() == "Account_Creation"]
+                        auth_records = df[df.iloc[:, 2].astype(str).str.strip().str.lower() == "account_creation"]
                         for _, row in auth_records.iterrows():
-                            notes_field = str(row.iloc[3])
+                            # Bulletproof search: scan the entire row for our security marker
+                            notes_field = ""
+                            for item in row.values:
+                                if isinstance(item, str) and "::" in item:
+                                    notes_field = item
+                                    break
+                                    
                             p_name = str(row.iloc[1])
+                            
                             if "::" in notes_field:
                                 stored_email, _ = notes_field.split("::", 1)
                                 if stored_email == new_email:
@@ -349,108 +362,4 @@ else:
                     
                     st.balloons()
                     st.success(f"🎉 **GOALLL! Incredible effort, {st.session_state.user}!**")
-                    st.info(f"🏆 You just banked **{elapsed_mins} minutes** of pure brain-training. A true Thundercat never quits. Take a breather, hydrate, and we'll see you at the next session!")
-                    
-                    time.sleep(4)
-                    st.session_state.active_tab = "🏆 League Table"
-                    st.rerun()
-
-    # ---------------------------------------------------------
-    # MODULE 2: HUSTLE LOG
-    # ---------------------------------------------------------
-    elif menu == "📝 The Hustle Log":
-        st.header("📋 The Off-Field Hustle Log")
-        st.write("True professionals put in work even when the stadium cameras are turned off. Log your stats below!")
-        
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.subheader("🧹 Cleaning the Pitch")
-            chore_txt = st.text_input("What chore did you complete? (e.g., Vacuumed):")
-            if st.button("Log Chore Points") and chore_txt:
-                send_to_db(st.session_state.user, "Chore", 1, chore_txt)
-                load_from_db.clear()
-                st.success("Top team player! Milestone added!")
-                
-        with c2:
-            st.subheader("📚 Scouting Reports")
-            book_txt = st.text_input("What book did you devour? (Builds reading muscle!):")
-            if st.button("Log Reading Progress") and book_txt:
-                send_to_db(st.session_state.user, "Book", 1, book_txt)
-                load_from_db.clear()
-                st.success("Expanding your playbook! Tracked successfully.")
-                
-        with c3:
-            st.subheader("💪 Fitness & Conditioning")
-            workout_mins = st.number_input("Minutes spent training today:", min_value=0, max_value=300, step=5)
-            if st.button("Log Training Minutes") and workout_mins > 0:
-                send_to_db(st.session_state.user, "Workout", workout_mins, "Athletic conditioning block")
-                load_from_db.clear()
-                st.success("Engine conditioning blocks posted!")
-
-    # ---------------------------------------------------------
-    # MODULE 3: LEADERBOARD SYSTEM
-    # ---------------------------------------------------------
-    elif menu == "🏆 League Table":
-        st.header("🏆 The Academy League Table")
-        log_df = load_from_db("get_logs")
-        
-        if log_df.empty or len(log_df.columns) < 4:
-            st.info("No stats recorded on the pitch yet. Complete a training drill to break the ice!")
-        else:
-            p_idx = 1  
-            a_idx = 2  
-            v_idx = 3  
-            
-            summary = []
-            unique_players = log_df.iloc[:, p_idx].dropna().astype(str).str.strip().unique()
-            
-            for player in unique_players:
-                if player in ["None", "nan", "", "player", "Player", "timestamp", "Timestamp"]: 
-                    continue
-                if "-" in player and ":" in player or len(player) > 20 and ("202" in player):
-                    continue
-                
-                pdf = log_df[log_df.iloc[:, p_idx].astype(str).str.strip() == player]
-                
-                study = 0
-                chores = 0
-                books = 0
-                fitness = 0
-                
-                for _, row in pdf.iterrows():
-                    act = str(row.iloc[a_idx]).strip().capitalize()
-                    if act in ["Registration", "Account_creation"]:
-                        continue
-                        
-                    try:
-                        val = float(row.iloc[v_idx])
-                    except:
-                        val = 0.0
-                        
-                    if act in ["Math", "Reading", "Science"]:
-                        study += val
-                    elif act == "Chore":
-                        chores += val
-                    elif act == "Book":
-                        books += val
-                    elif act == "Workout":
-                        fitness += val
-                
-                pts = study + fitness + (chores * 10) + (books * 20)
-                
-                if pts > 0 or study > 0 or fitness > 0:
-                    summary.append({
-                        "Player Squad Member 🏃‍♂️": str(player), 
-                        "Study Mins 📚": int(study), 
-                        "Chores Done 🧹": int(chores), 
-                        "Books Read 📖": int(books), 
-                        "Fitness Mins 💪": int(fitness), 
-                        "Total League Points 🏆": int(pts)
-                    })
-            
-            if summary:
-                res_df = pd.DataFrame(summary).sort_values(by="Total League Points 🏆", ascending=False).reset_index(drop=True)
-                st.dataframe(res_df, use_container_width=True)
-                st.balloons()
-            else:
-                st.info("Training roster calculations processing... Complete a match drill or log a chore to update scores!")
+                    st.info(f"🏆 You just banked **{elapsed_mins} minutes** of pure brain-training. A true Thundercat never quits. Take a breather, hydrate, and we'll see you at the next session
