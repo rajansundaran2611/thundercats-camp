@@ -278,6 +278,9 @@ else:
                     elapsed_mins = max(1, int(st.session_state.frozen_seconds / 60))
                     send_to_db(st.session_state.user, subj, elapsed_mins, "Completed Daily Lesson Module")
                     
+                    # NEW PLAY: Clear the cache so the League Table updates instantly!
+                    load_from_db.clear()
+                    
                     st.balloons()
                     st.success(f"🎉 **GOALLL! Incredible effort, {st.session_state.user}!**")
                     st.info(f"🏆 You just banked **{elapsed_mins} minutes** of pure brain-training. A true Thundercat never quits. Take a breather, hydrate, and we'll see you at the next session!")
