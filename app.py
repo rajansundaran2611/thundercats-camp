@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import urllib.request
 import json
+import time
 
 # App Setup & Theme Branding
 st.set_page_config(page_title="Thornton Thundercats FC", page_icon="⚽", layout="wide")
@@ -71,12 +72,74 @@ if not st.session_state.user:
         name = st.text_input("Enter your Locker Room Name (e.g., ClinicalCole):").strip()
         if st.form_submit_button("Sign the Contract") and name:
             st.session_state.user = name
+            st.session_state.login_time = time.time() # Start the session timer
             send_to_db(name, "Registration", 0, "Signed with the club roster")
             st.rerun()
 else:
+    # --- DIGITAL CLOCK TIMER SYSTEM ---
+    if 'login_time' not in st.session_state:
+        st.session_state.login_time = time.time()
+    
+    elapsed_seconds = int(time.time() - st.session_state.login_time)
+    
+    timer_html = f"""
+    <style>
+      #student-timer {{
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background-color: #0f4d92;
+        color: #ffffff;
+        padding: 10px 20px;
+        font-size: 24px;
+        font-family: 'Courier New', Courier, monospace;
+        font-weight: bold;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        z-index: 999999;
+      }}
+    </style>
+    <div id="student-timer">00:00</div>
+    <script>
+      // Pull elapsed time from Python session state so it survives Streamlit reruns
+      let totalSeconds = {elapsed_seconds};
+      
+      function updateTimer() {{
+        totalSeconds++;
+        let hours = Math.floor(totalSeconds / 3600);
+        let minutes = Math.floor((totalSeconds - (hours * 3600)) / 60);
+        let seconds = totalSeconds - (hours * 3600) - (minutes * 60);
+
+        let formattedMinutes = minutes < 10 ? "0" + minutes : minutes;
+        let formattedSeconds = seconds < 10 ? "0" + seconds : seconds;
+        
+        let display = formattedMinutes + ":" + formattedSeconds;
+        
+        if (hours > 0) {{
+            let formattedHours = hours < 10 ? "0" + hours : hours;
+            display = formattedHours + ":" + display;
+        }}
+
+        // Streamlit renders HTML in an iframe, so we target the element locally
+        document.getElementById("student-timer").innerHTML = display;
+        
+        // Also attempt to push it to the top window in case the iframe cuts it off
+        try {{
+            window.parent.document.getElementById("student-timer-display").innerHTML = display;
+        }} catch(e) {{}}
+      }}
+
+      setInterval(updateTimer, 1000);
+    </script>
+    """
+    st.markdown(timer_html, unsafe_allow_html=True)
+    # --- END DIGITAL CLOCK TIMER ---
+
     st.sidebar.markdown(f"### 🏃‍♂️ Squad Member: **{st.session_state.user}**")
     if st.sidebar.button("Leave Training"):
         st.session_state.user = None
+        if 'login_time' in st.session_state:
+            del st.session_state.login_time
         st.rerun()
 
     menu = st.sidebar.radio("Tactics Board", ["📋 Daily Drills", "📝 The Hustle Log", "🏆 League Table"])
